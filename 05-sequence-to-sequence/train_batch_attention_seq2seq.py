@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import torch
 from torch import optim
 from torch.autograd import Variable
@@ -54,21 +55,28 @@ for epoch in range(num_epoches):
         mask=mask[sort_index]
 
         encoder_outputs, encoder_hidden = encoderModel(x, sort_value)
-        decoder_input = Variable(torch.LongTensor([[SOS_token]*len(y)]))  # 注意转化为矩阵
+        decoder_input = Variable(torch.LongTensor([[SOS_token]*len(y)])).view(-1,1)  # 注意转化为矩阵
         if use_cuda:
             decoder_input = decoder_input.cuda()
         decoder_hidden = encoder_hidden
         loss = 0
         acc_t = 0
+        mask_end=Variable(torch.ByteTensor([1]*len(y)).view(-1,1))#结束开关
+        if use_cuda:
+            mask_end=mask_end.cuda()
         for di in range(y.size(1)):
-            y_=y[:,di].contiguous().view(-1,1)
-            mask_=mask[:,di].contiguous().view(-1,1)
+            y_=y[:,di].contiguous().view(-1,1)#B,1
+            mask_=mask[:,di].contiguous().view(-1,1)#B,1
+            mask_=mask_*mask_end
             decoder_output,decoder_hidden=attentionDecoderModel(decoder_input,decoder_hidden,encoder_outputs)
             # loss_not_mask=criterion(decoder_output, y[:, di])#未mask损失
-            loss_not_mask=attentionDecoderModel.my_batch_nllloss(decoder_output,y_)#未mask损失
+            loss_not_mask=attentionDecoderModel.my_batch_nllloss(decoder_output,y_)#未mask损失#B,1
             loss_mask=loss_not_mask*mask_.float()
             loss += loss_mask
             max_value,max_index=torch.max(decoder_output,1)  # 取最大可能的一个,B
+            #若预测为结束标签，则其后的mask全置为0
+            ni = max_index.view(-1, 1)
+            mask_end[ni==EOS_token]=0
             #准确次数
             #注意此时mask_，TOT
             if (mask_==0).data.sum()==len(mask_):
@@ -77,7 +85,6 @@ for epoch in range(num_epoches):
             y_true=torch.masked_select(y_,mask_)
             acc_t+=(y_pre==y_true).data.sum()/len(y_pre)#加上每个序列的batch准确度
 
-            ni = max_index.view(1,-1)
             decoder_input = ni  # 前面的输出作为后面的输入
         loss=torch.sum(loss)/len(y)
         # backward

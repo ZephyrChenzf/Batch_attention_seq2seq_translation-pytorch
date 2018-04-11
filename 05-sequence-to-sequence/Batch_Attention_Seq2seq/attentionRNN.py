@@ -76,11 +76,11 @@ class AttnDecoderRNN(nn.Module):
 
     def forward(self, word_input, last_hidden, encoder_outputs):
         '''
-        word_input:  1,B
+        word_input:  B,1
         last_hidden: layers*direction,B,H
         encoder_outputs: T,B,H
         '''
-        word_embedded = self.embedding(word_input).view(1, word_input.size(1), -1) # (1,B,V)解码器输入单个
+        word_embedded = self.embedding(word_input).view(1, word_input.size(0), -1) # (1,B,V)解码器输入单个
         word_embedded = self.dropout(word_embedded)
         # Calculate attention weights and apply to encoder outputs
         attn_weights = self.attn(last_hidden[-1], encoder_outputs)#B,1,T
