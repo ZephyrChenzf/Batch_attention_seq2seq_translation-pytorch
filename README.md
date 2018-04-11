@@ -12,10 +12,9 @@ pytorch用Batch_attention_seq2seq模型实现机器翻译<br>
 
 训练过程
 --------
-训练过程在‘train_batch_attention_seq2seq.py’中
-  
--------------------
+训练过程在‘train_batch_attention_seq2seq.py’中<br>
 
+-------------------
 数据
 --------
 数据存在data文件夹中
