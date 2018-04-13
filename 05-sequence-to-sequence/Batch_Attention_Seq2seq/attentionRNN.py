@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import math
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, embed_size, hidden_size, n_layers=1, dropout=0.5):
+    def __init__(self, input_size, embed_size, hidden_size, n_layers=1, dropout=0.):
         super(EncoderRNN, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -34,29 +34,42 @@ class Attn(nn.Module):
         super(Attn, self).__init__()
         self.method = method
         self.hidden_size = hidden_size
-        self.attn = nn.Linear(self.hidden_size * 2, hidden_size)
-        self.v = nn.Parameter(torch.rand(hidden_size))
-        stdv = 1. / math.sqrt(self.v.size(0))
-        self.v.data.normal_(mean=0., std=stdv)
+        if self.method=='general':
+            self.attn=nn.Linear(self.hidden_size,hidden_size)
+        elif self.method=='concat':
+            self.attn = nn.Linear(self.hidden_size * 2, hidden_size)
+            self.v = nn.Parameter(torch.rand(hidden_size))
+            stdv = 1. / math.sqrt(self.v.size(0))
+            self.v.data.normal_(mean=0., std=stdv)
 
     def forward(self, hidden, encoder_outputs):
         '''
-        hidden: layers*directions,B,H
+        hidden: B,H
         encoder_outputs: T,B,H
         '''
         max_len = encoder_outputs.size(0)
         this_batch_size = encoder_outputs.size(1)
-        H = hidden.repeat(max_len,1,1).transpose(0,1)#T,B,H->B,T,H
-        encoder_outputs = encoder_outputs.transpose(0,1) # [B*T*H]
+        if self.method=='general':
+            H=hidden.unsqueeze(1)#B,1,H
+            encoder_outputs=encoder_outputs.transpose(0,1)#B,T,H
+        elif self.method=='concat':
+            H = hidden.repeat(max_len,1,1).transpose(0,1)#T,B,H->B,T,H
+            encoder_outputs = encoder_outputs.transpose(0,1) # [B,T,H]
+
         attn_energies = self.score(H,encoder_outputs) # compute attention score#B,T
         return F.softmax(attn_energies).unsqueeze(1) # normalize with softmax#B,1,T
 
     def score(self, hidden, encoder_outputs):
-        energy = F.tanh(self.attn(torch.cat([hidden, encoder_outputs], 2))) # [B*T*2H]->[B*T*H]采用连接的方法
-        energy = energy.transpose(2,1) # [B*H*T]
-        v = self.v.repeat(encoder_outputs.data.shape[0],1).unsqueeze(1) #[B*1*H]
-        energy = torch.bmm(v,energy) # [B*1*T]
-        return energy.squeeze(1) #[B*T]
+        if self.method=='general':
+            energy=self.attn(encoder_outputs)
+            energy=torch.bmm(hidden,energy)
+            pass
+        elif self.method=='concat':
+            energy = self.attn(torch.cat([hidden, encoder_outputs], 2)) # [B*T*2H]->[B*T*H]采用连接的方法
+            energy = energy.transpose(2,1) # [B*H*T]
+            v = self.v.repeat(encoder_outputs.data.shape[0],1).unsqueeze(1) #[B*1*H]
+            energy = torch.bmm(v,energy) # [B*1*T]
+            return energy.squeeze(1) #[B*T]
 
 class AttnDecoderRNN(nn.Module):
     def __init__(self, hidden_size, embed_size, output_size, n_layers=1, dropout_p=0.1):
@@ -83,7 +96,7 @@ class AttnDecoderRNN(nn.Module):
         word_embedded = self.embedding(word_input).view(1, word_input.size(0), -1) # (1,B,V)解码器输入单个
         word_embedded = self.dropout(word_embedded)
         # Calculate attention weights and apply to encoder outputs
-        attn_weights = self.attn(last_hidden[-1], encoder_outputs)#B,1,T
+        attn_weights = self.attn(last_hidden[0], encoder_outputs)#B,1,T
         context = attn_weights.bmm(encoder_outputs.transpose(0, 1))  # (B,1,H)
         context = context.transpose(0, 1)  # (1,B,H)
         # Combine embedded input word and attended context, run through RNN
